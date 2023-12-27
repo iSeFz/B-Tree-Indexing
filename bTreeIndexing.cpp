@@ -68,7 +68,41 @@ void displayIndexFileContent(char *filename)
 // Search for a certain record in the index file using its record ID
 // Return -1 if the record doesn’t exist in the index
 // Or return the reference value to the data file if the record exist on the index
-int searchARecord(char *filename, int recordID);
+int searchARecord(char *filename, int recordID)
+{
+    // Open the file for reading in binary mode
+    fstream file(filename, ios::in | ios::binary);
+    // Size of each record = (2m + 1) cells * 2 bytes per cell
+    int recordSize = (2 * fileNodes + 1) * 2;
+    // Skip the first record of the index file & the first cell of the first record
+    file.seekg(recordSize + 2, ios::beg);
+    // Sequential search for the record ID in the index file
+    while (true)
+    {
+        // Read the record ID of the current record
+        int currentRecordID;
+        file.read((char *)(&currentRecordID), sizeof(short));
+        // If the current key is equal to the searched key, return its reference value
+        if (currentRecordID == recordID)
+        {
+            short reference;
+            file.read((char *)(&reference), sizeof(short));
+            return reference;
+        }
+        // If the current key is greater than the searched key, return -1
+        else if (currentRecordID > recordID)
+        { // Seek to the next node
+            short nextReference;
+            file.read((char *)(&nextReference), sizeof(short));
+            file.seekg(nextReference * recordSize + 2, ios::beg);
+        }
+        // Otherwise, if the current key is smaller than the searched key
+        // Seek to the next item in the current node
+        else
+            file.seekg(2, ios::cur);
+    }
+    return -1; // If the record doesn't exist in the index
+}
 
 // Main function to start the program
 int main()
@@ -130,16 +164,14 @@ int main()
         case 4: // Searching for a record in the index file
         {
             cout << "\tSearching for a record in the index file...\n";
-            /*
             cout << "Enter the record ID: ";
             int recordID;
             cin >> recordID;
             int reference = searchARecord("bTreeIndex.bin", recordID);
             if (reference == -1)
-                cout << "The record doesn't exist in the index!\n";
+                cout << "Record doesn't exist in the index!\n";
             else
-                cout << "The record exist on the index and its reference value is " << reference << "\n";
-            */
+                cout << "Data file reference value ==> " << reference << "\n";
             break;
         }
         case 5: // Displaying the contents of the index file
