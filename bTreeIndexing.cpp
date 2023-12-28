@@ -58,7 +58,7 @@ void displayIndexFileContent(char *filename)
         { // Output the current cell value
             short currentCell;
             file.read((char *)(&currentCell), sizeof(short));
-            cout << currentCell << "  |  ";
+            cout << setw(5) << currentCell << setw(3) << "|";
         }
         cout << "\n"; // If reached the end of the record, output a new line
     }
@@ -74,34 +74,45 @@ int searchARecord(char *filename, int recordID)
     fstream file(filename, ios::in | ios::binary);
     // Size of each record = (2m + 1) cells * 2 bytes per cell
     int recordSize = (2 * fileNodes + 1) * 2;
-    // Skip the first record of the index file & the first cell of the first record
-    file.seekg(recordSize + 2, ios::beg);
+    // Skip the first record of the index file
+    file.seekg(recordSize, ios::beg);
+    // Boolean value to track the start of record
+    bool startOfRecord = true;
     // Sequential search for the record ID in the index file
     while (true)
     {
+        short isLeaf, currentRecordID, nextReference;
+        // If it's the start of a new record
+        // Read the first cell to see if this is a leaf node or not
+        if (startOfRecord)
+            file.read((char *)&isLeaf, sizeof(short));
         // Read the record ID of the current record
-        int currentRecordID;
         file.read((char *)(&currentRecordID), sizeof(short));
-        // If the current key is equal to the searched key, return its reference value
-        if (currentRecordID == recordID)
+        // Read its reference pointer
+        file.read((char *)(&nextReference), sizeof(short));
+        // Return -1, if the record doesn't exist in the index
+        if (currentRecordID == -1)
+            return -1;
+        // If the current key is greater than or equal the searched key
+        if (currentRecordID >= recordID)
         {
-            short reference;
-            file.read((char *)(&reference), sizeof(short));
-            return reference;
-        }
-        // If the current key is greater than the searched key, return -1
-        else if (currentRecordID > recordID)
-        { // Seek to the next node
-            short nextReference;
-            file.read((char *)(&nextReference), sizeof(short));
-            file.seekg(nextReference * recordSize + 2, ios::beg);
+            // If the current record is a leaf node
+            if (isLeaf == 0) {
+                // If the current key is equal to the searched key, then this is the data file reference value
+                if (currentRecordID == recordID)
+                    return nextReference;
+                else // Otherwise, the record doesn't exist in the index
+                    return -1;
+            }
+            // Otherwise, this is an index pointer, continue searching
+            file.seekg(nextReference * recordSize, ios::beg);
+            // Update the startOfRecord to true to start reading from the beginning of the record
+            startOfRecord = true;
         }
         // Otherwise, if the current key is smaller than the searched key
-        // Seek to the next item in the current node
-        else
-            file.seekg(2, ios::cur);
+        else // Mark the startOfRecord to false to continue searching withing the same record
+            startOfRecord = false;
     }
-    return -1; // If the record doesn't exist in the index
 }
 
 // Main function to start the program
@@ -169,14 +180,14 @@ int main()
             cin >> recordID;
             int reference = searchARecord("bTreeIndex.bin", recordID);
             if (reference == -1)
-                cout << "Record doesn't exist in the index!\n";
+                cerr << "Record doesn't exist in the index!\n";
             else
                 cout << "Data file reference value ==> " << reference << "\n";
             break;
         }
         case 5: // Displaying the contents of the index file
         {
-            cout << "\t\tIndex File Contents\n";
+            cout << setw(30) << "" << "Index File Contents\n";
             displayIndexFileContent("bTreeIndex.bin");
             break;
         }
