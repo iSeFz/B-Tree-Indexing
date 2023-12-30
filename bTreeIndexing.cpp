@@ -139,7 +139,8 @@ int searchARecord(char *filename, int recordID)
         if (currentRecordID >= recordID)
         {
             // If the current record is a leaf node
-            if (isLeaf == 0) {
+            if (isLeaf == 0)
+            {
                 // If the current key is equal to the searched key, then this is the data file reference value
                 if (currentRecordID == recordID)
                     return nextReference;
@@ -156,6 +157,219 @@ int searchARecord(char *filename, int recordID)
             startOfRecord = false;
     }
 }
+
+// Insertion implementation
+
+class IndexInsertion
+{
+    class Record
+    {
+    public:
+        short indexInFile;
+        bool isInternalNode;
+        map<short, short> keys;
+        Record *previousRecord;
+    };
+    // Test case
+    /*
+        2 3 12
+        2 7 24
+        2 10 48
+        2 24 60
+        2 14 72
+        2 19 84
+        2 30 96
+        2 15 108
+        2 1 120
+        2 5 132
+        2 2 144
+        2 8 156
+        2 9 168
+        2 6 180
+        2 11 192
+        2 12 204
+        2 17 216
+        2 18 228
+        2 32 240
+    */
+public:
+    int insert(string &filename, int &recordID, int &reference)
+    {
+        fstream file(filename, ios::in | ios::out | ios::binary);
+        Record root = getRecordAtIndex(file, 1);
+        if (root.keys.size() == 0)
+        {
+            setNextEmptyIndexAtFile(file);
+        }
+        short index = insertKeyAt(file, recordID, reference, root);
+        file.close();
+        return index;
+    }
+
+    short insertKeyAt(fstream &file, int &recordID, int &reference, Record &record)
+    {
+        if (record.isInternalNode)
+        {
+            short nextIndex = -1;
+            for (auto key : record.keys)
+            {
+                if (recordID <= key.first)
+                {
+                    nextIndex = key.second;
+                    break;
+                }
+            }
+            if (nextIndex == -1)
+            {
+                nextIndex = record.keys.rbegin()->second;
+            }
+            Record nextRecord = getRecordAtIndex(file, nextIndex, &record);
+            return insertKeyAt(file, recordID, reference, nextRecord);
+        }
+        else
+        {
+            // if the recordID is greater than the grandest key in the record, then we must modify the its key from the previous record
+            if (record.previousRecord != NULL && recordID > record.keys.rbegin()->first)
+            {
+                record.previousRecord->keys.erase(record.previousRecord->keys.rbegin()->first);
+                record.previousRecord->keys.insert({recordID, record.indexInFile});
+                saveNodesFrom(file, *record.previousRecord);
+            }
+
+            // insert the recordID and reference into the record
+            record.keys.insert({recordID, reference});
+            if (record.keys.size() > fileNodes)
+            {
+                return splitRecord(file, record, recordID);
+            }
+            else
+            {
+                saveNodesFrom(file, record);
+                return record.indexInFile;
+            }
+        }
+    }
+
+    short splitRecord(fstream &file, Record &record, int &recordID)
+    {
+        Record newRecord;
+        newRecord.isInternalNode = record.isInternalNode;
+        newRecord.indexInFile = getNextEmptyIndexFromFile(file);
+        if (newRecord.indexInFile == -1)
+            return -1;
+        setNextEmptyIndexAtFile(file);
+        int i = 0;
+        while (i <= fileNodes / 2)
+        {
+            newRecord.keys.insert(*record.keys.rbegin());
+            record.keys.erase(record.keys.rbegin()->first);
+            i++;
+        }
+        if (record.previousRecord == NULL)
+        {
+            record.indexInFile = newRecord.indexInFile;
+            newRecord.indexInFile = getNextEmptyIndexFromFile(file);
+            setNextEmptyIndexAtFile(file);
+            Record *newRoot = new Record();
+            newRoot->isInternalNode = true;
+            newRoot->indexInFile = 1;
+            newRoot->keys.insert({record.keys.rbegin()->first, record.indexInFile});
+            newRoot->keys.insert({newRecord.keys.rbegin()->first, newRecord.indexInFile});
+            record.previousRecord = newRoot;
+            newRecord.previousRecord = newRoot;
+        }
+        else
+        {
+            Record *previousRecord = record.previousRecord;
+            previousRecord->keys[record.keys.rbegin()->first] = record.indexInFile;
+            previousRecord->keys[newRecord.keys.rbegin()->first] = newRecord.indexInFile;
+            newRecord.previousRecord = previousRecord;
+            if (previousRecord->keys.size() > fileNodes)
+                splitRecord(file, *previousRecord, recordID);
+        }
+        saveNodesFrom(file, record);
+        saveNodesFrom(file, newRecord);
+        // return the index of the record that contains the recordID
+        if (record.keys.count(recordID))
+            return record.indexInFile;
+        else
+            return newRecord.indexInFile;
+    }
+
+    void saveNodesFrom(fstream &file, Record &record)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        file.seekp(record.indexInFile * recordSize * sizeof(short), ios::beg);
+        short isInternalNode = record.isInternalNode ? 1 : 0;
+        file.write((char *)(&isInternalNode), sizeof(short));
+        int i = 0;
+        for (auto key : record.keys)
+        {
+            file.write((char *)(&key.first), sizeof(short));
+            file.write((char *)(&key.second), sizeof(short));
+            i++;
+        }
+        for (; i < fileNodes; i++)
+        {
+            short cell = -1;
+            file.write((char *)(&cell), sizeof(short));
+            file.write((char *)(&cell), sizeof(short));
+        }
+        if (record.previousRecord != NULL)
+            saveNodesFrom(file, *record.previousRecord);
+    }
+
+    short getNextEmptyIndexFromFile(fstream &file)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        file.seekg(0, ios::beg);
+        file.ignore(sizeof(short));
+        short nextEmptyIndex;
+        file.read((char *)(&nextEmptyIndex), sizeof(short));
+        return nextEmptyIndex;
+    }
+
+    void setNextEmptyIndexAtFile(fstream &file)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        // get the current empty index (That has been occupied)
+        short previousEmptyIndex = getNextEmptyIndexFromFile(file);
+        // get the next empty index (That has not been occupied)
+        file.seekg(previousEmptyIndex * recordSize * sizeof(short), ios::beg);
+        file.ignore(sizeof(short));
+        short nextEmptyIndex;
+        file.read((char *)(&nextEmptyIndex), sizeof(short));
+        // set the next empty index to the file
+        file.seekp(0, ios::beg);
+        file.ignore(sizeof(short));
+        file.write((char *)(&nextEmptyIndex), sizeof(short));
+    }
+
+    Record getRecordAtIndex(fstream &file, short recordIndex, Record *previousRecord = NULL)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        file.seekg(recordIndex * recordSize * sizeof(short), ios::beg);
+        Record record;
+        record.indexInFile = recordIndex;
+        short nodeType;
+        file.read((char *)(&nodeType), sizeof(short));
+        if (nodeType == 1)
+            record.isInternalNode = true;
+        else
+            record.isInternalNode = false;
+        pair<short, short> key;
+        for (int i = 0; i < fileNodes; i++)
+        {
+            file.read((char *)(&key.first), sizeof(short));
+            file.read((char *)(&key.second), sizeof(short));
+            if (key.first == -1 || key.second == -1)
+                break;
+            record.keys.insert(key);
+        }
+        record.previousRecord = previousRecord;
+        return record;
+    }
+};
 
 // Main function to start the program
 int main()
@@ -188,19 +402,25 @@ int main()
         case 2: // Inserting a new record to the index file
         {
             cout << "\tInserting a new record to the index file...\n";
-            /*
             cout << "Enter the record ID: ";
             int recordID;
             cin >> recordID;
             cout << "Enter the reference value: ";
             int reference;
             cin >> reference;
-            int nodeIndex = insertNewRecordAtIndex("bTreeIndex.bin", recordID, reference);
+            IndexInsertion insertion;
+            string filename = "bTreeIndex.bin";
+            if (searchARecord((char *)filename.c_str(), recordID) != -1)
+            {
+                cout << "The record already exists in the index!\n";
+                break;
+            }
+            int nodeIndex = insertion.insert(filename, recordID, reference);
             if (nodeIndex == -1)
                 cout << "There is no place to insert the record!\n";
             else
                 cout << "The record was inserted successfully at node " << nodeIndex << "\n";
-            */
+
             break;
         }
         case 3: // Deleting a record from the index file
@@ -229,7 +449,8 @@ int main()
         }
         case 5: // Displaying the contents of the index file
         {
-            cout << setw(30) << "" << "Index File Contents\n";
+            cout << setw(30) << ""
+                 << "Index File Contents\n";
             displayIndexFileContent("bTreeIndex.bin");
             break;
         }
