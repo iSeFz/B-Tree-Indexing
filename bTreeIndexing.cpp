@@ -42,7 +42,49 @@ void createIndexFile(char *filename, int numberOfRecords, int m)
 int insertNewRecordAtIndex(char *filename, int recordID, int reference);
 
 // Delete a certain record from the index file by its record ID
-void deleteRecordFromIndex(char *filename, int recordID);
+void mergeTwoNodes(char *filename , int firstRecord , int secondRecord){
+    short id , reference;
+    ifstream treeFile(filename , ios::in | ios::binary);
+    ofstream newFile("newfile.txt" , ios::out | ios::binary);
+    while(treeFile.tellg() != firstRecord){
+        treeFile.read((char*)&id,sizeof(id));
+        newFile.write((char*) &id , sizeof(id));
+    }
+    treeFile.read((char*)&id,sizeof(id));
+    newFile.write((char*)&id,sizeof(id));
+    while(id != -1){
+        treeFile.read((char*)&id,sizeof(id));
+        treeFile.read((char*)&reference,sizeof(reference));
+        newFile.write((char*)&id, sizeof(id));
+        newFile.write((char*)&reference, sizeof(reference));
+    }
+    int currentPosition = treeFile.tellg();
+    treeFile.seekg(secondRecord , ios::beg);
+    id = 0;
+    // read the bit leaf or not
+    treeFile.read((char*)&reference, sizeof(reference));
+    while(id != -1){
+        treeFile.read((char*)&id , sizeof(id));
+        treeFile.read((char*)&reference, sizeof(reference));
+        currentPosition += (sizeof(id) + sizeof(reference));
+        newFile.write((char*)&id, sizeof(id));
+        newFile.write((char*)&reference, sizeof(reference));
+    }
+    treeFile.seekg(currentPosition, ios::beg);
+    while(!treeFile.eof()){
+        treeFile.read((char*)&id,sizeof(id));
+        treeFile.read((char*)&reference,sizeof(reference));
+        newFile.write((char*)&id, sizeof(id));
+        newFile.write((char*)&reference, sizeof(reference));
+    }
+    treeFile.close();
+    newFile.close();
+    remove(filename);
+    rename("newfile.txt", filename);
+}
+void deleteRecordFromIndex(char *filename, int recordID){
+
+};
 
 // Display the contents of the index file, each node in a line
 void displayIndexFileContent(char *filename)
