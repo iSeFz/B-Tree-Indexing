@@ -2,8 +2,8 @@
 using namespace std;
 
 /* Global variables used throughout the program */
-int fileNodes = 5;
-int fileRecords = 10;
+int fileNodes = 0;
+int fileRecords = 0;
 
 /* Mandatory functions prototypes */
 void createIndexFile(char *filename, int numberOfRecords, int m);
@@ -24,7 +24,7 @@ int main()
                 "3. Delete a record\n"
                 "4. Search for a record\n"
                 "5. Display the index file content\n"
-                "6- Exit\n"
+                "6. Exit\n"
                 "Choose one of the above options >> ";
         int choice;
         cin >> choice;
@@ -38,7 +38,6 @@ int main()
             cout << "Enter the number of nodes: ";
             cin >> fileNodes;
             createIndexFile((char *)FILENAME.c_str(), fileRecords, fileNodes);
-            cout << "\tIndex File Created Successfully!\n";
             break;
         }
         case 2: // Inserting a new record to the index file
@@ -50,17 +49,12 @@ int main()
             cout << "Enter the reference value: ";
             int reference;
             cin >> reference;
-            // Search for the file to check if the record already exists
-            if (searchARecord((char *)FILENAME.c_str(), recordID) != -1)
-            {
-                cout << "The record already exists in the index!\n";
-                break;
-            }
             int nodeIndex = insertNewRecordAtIndex((char *)FILENAME.c_str(), recordID, reference);
             if (nodeIndex == -1)
-                cout << "There is no place to insert the record!\n";
+                cout << "\tNo place to insert the record!\n";
             else
-                cout << "The record was inserted successfully at node " << nodeIndex << "\n";
+                cout << "\tRecord inserted successfully at index #" << nodeIndex << "\n";
+
             break;
         }
         case 3: // Deleting a record from the index file
@@ -80,15 +74,14 @@ int main()
             cin >> recordID;
             int reference = searchARecord((char *)FILENAME.c_str(), recordID);
             if (reference == -1)
-                cerr << "Record doesn't exist in the index!\n";
+                cerr << "\tRecord doesn't exist in the index!\n";
             else
-                cout << "Data file reference value ==> " << reference << "\n";
+                cout << "\tData file reference value ==> " << reference << "\n";
             break;
         }
         case 5: // Displaying the contents of the index file
         {
-            cout << setw(30) << ""
-                 << "Index File Contents\n";
+            cout << setw(30) << "" << "Index File Contents\n";
             displayIndexFileContent((char *)FILENAME.c_str());
             break;
         }
@@ -109,149 +102,6 @@ public:
     bool isInternalNode;
     map<short, short> keys;
     Record *previousRecord;
-};
-
-// Deletion implementation class
-class IndexDeletion
-{
-public:
-    // Delete a certain key from the index file by its value
-    void deleteKeyFromIndex(char *filename, int key)
-    {
-        // Open the file for reading and writing in binary mode
-        fstream file(filename, ios::in | ios::out | ios::binary);
-        // Save the root node record
-        Record root = getRecordAtIndex(file, 1);
-        // Delete the key from the record
-        deleteKeyFromRecord(file, key, root);
-        file.close();
-    }
-
-    // Update the previous pointers of the records
-    Record deleteKeyFromRecord(fstream &file, int recordID, Record &record)
-    {
-        // If the record is an internal node, check for previous pointers
-        if (record.isInternalNode)
-        {
-            // Otherwise, update the previous pointers of the records
-            short nextIndex = -1;
-            for (auto key : record.keys)
-            {
-                if (key.first >= recordID)
-                {
-                    nextIndex = key.second;
-                    break;
-                }
-            }
-            if (nextIndex == -1)
-                nextIndex = record.keys.rbegin()->second;
-            Record nextRecord = getRecordAtIndex(file, nextIndex, &record);
-            return deleteKeyFromRecord(file, recordID, nextRecord);
-        }
-        else
-        {
-            // If the number of keys is greater than the minimum number of keys
-            if (record.keys.size() > floor(fileNodes / 2))
-            {
-                // Delete the key from the record
-                record.keys.erase(recordID);
-                // Temporary record
-                Record tempRecord = record;
-                // Update previous records if exists
-                while (tempRecord.previousRecord != NULL)
-                {
-                    // Store the index of the current record
-                    short recordIndex = tempRecord.indexInFile;
-                    // Erase the last key from the previous record
-                    tempRecord.previousRecord->keys.erase(tempRecord.previousRecord->keys.rbegin()->first);
-                    // Insert the last key from the current record
-                    tempRecord.previousRecord->keys.insert({record.keys.rbegin()->first, recordIndex});
-                    // Store the previous record
-                    tempRecord = *tempRecord.previousRecord;
-                }
-                // Save the records back to the file
-                saveNodesFrom(file, tempRecord);
-            }
-            return record;
-        }
-    }
-
-    // Save the nodes back to the file
-    void saveNodesFrom(fstream &file, Record &record)
-    {
-        int recordSize = 2 * fileNodes + 1;
-        file.seekp(record.indexInFile * recordSize * sizeof(short), ios::beg);
-        short isInternalNode = record.isInternalNode ? 1 : 0;
-        file.write((char *)(&isInternalNode), sizeof(short));
-        int i = 0;
-        for (auto key : record.keys)
-        {
-            file.write((char *)(&key.first), sizeof(short));
-            file.write((char *)(&key.second), sizeof(short));
-            i++;
-        }
-        for (; i < fileNodes; i++)
-        {
-            short cell = -1;
-            file.write((char *)(&cell), sizeof(short));
-            file.write((char *)(&cell), sizeof(short));
-        }
-        if (record.previousRecord != NULL)
-            saveNodesFrom(file, *record.previousRecord);
-    }
-
-    // Get the next empty node index from the file
-    short getNextEmptyIndexFromFile(fstream &file)
-    {
-        file.seekg(0, ios::beg);
-        file.ignore(sizeof(short));
-        short nextEmptyIndex;
-        file.read((char *)(&nextEmptyIndex), sizeof(short));
-        return nextEmptyIndex;
-    }
-
-    // Update the next empty node index in the file
-    void setNextEmptyIndexAtFile(fstream &file)
-    {
-        int recordSize = 2 * fileNodes + 1;
-        // get the current empty index (That has been occupied)
-        short previousEmptyIndex = getNextEmptyIndexFromFile(file);
-        // get the next empty index (That has not been occupied)
-        file.seekg(previousEmptyIndex * recordSize * sizeof(short), ios::beg);
-        file.ignore(sizeof(short));
-        short nextEmptyIndex;
-        file.read((char *)(&nextEmptyIndex), sizeof(short));
-        // set the next empty index to the file
-        file.seekp(0, ios::beg);
-        file.ignore(sizeof(short));
-        file.write((char *)(&nextEmptyIndex), sizeof(short));
-    }
-
-    // Get the record at a certain index from the file
-    Record getRecordAtIndex(fstream &file, short recordIndex, Record *previousRecord = NULL)
-    {
-        int recordSize = 2 * fileNodes + 1;
-        file.seekg(recordIndex * recordSize * sizeof(short), ios::beg);
-        Record record;
-        record.indexInFile = recordIndex;
-        short nodeType;
-        file.read((char *)(&nodeType), sizeof(short));
-        if (nodeType == 1)
-            record.isInternalNode = true;
-        else
-            record.isInternalNode = false;
-        pair<short, short> key;
-        for (int i = 0; i < fileNodes; i++)
-        {
-            file.read((char *)(&key.first), sizeof(short));
-            file.read((char *)(&key.second), sizeof(short));
-            if (key.first == -1 || key.second == -1)
-                break;
-            record.keys.insert(key);
-        }
-        record.previousRecord = previousRecord;
-        return record;
-    }
 };
 
 // Insertion implementation class
@@ -285,9 +135,7 @@ public:
         fstream file(filename, ios::in | ios::out | ios::binary);
         Record root = getRecordAtIndex(file, 1);
         if (root.keys.size() == 0)
-        {
             setNextEmptyIndexAtFile(file);
-        }
         short index = insertKeyAt(file, recordID, reference, root);
         file.close();
         return index;
@@ -318,9 +166,15 @@ public:
             // if the recordID is greater than the grandest key in the record, then we must modify the its key from the previous record
             if (record.previousRecord != NULL && recordID > record.keys.rbegin()->first)
             {
-                record.previousRecord->keys.erase(record.previousRecord->keys.rbegin()->first);
-                record.previousRecord->keys.insert({recordID, record.indexInFile});
-                saveNodesFrom(file, *record.previousRecord);
+                Record *unmodifiedRecord = record.previousRecord;
+                int previousIndex = record.indexInFile;
+                while (unmodifiedRecord != NULL)
+                {
+                    unmodifiedRecord->keys.erase(unmodifiedRecord->keys.rbegin()->first);
+                    unmodifiedRecord->keys.insert({recordID, previousIndex});
+                    previousIndex = unmodifiedRecord->indexInFile;
+                    unmodifiedRecord = unmodifiedRecord->previousRecord;
+                }
             }
 
             // insert the recordID and reference into the record
@@ -458,6 +312,329 @@ public:
     }
 };
 
+// Deletion implementation class
+class IndexDeletion
+{
+    // Test case
+    /*
+        3 10
+        3 9
+        3 8
+    */
+public:
+    // Delete a certain key from the index file by its value
+    void deleteKey(char *filename, int &key)
+    {
+        // Open the file for reading and writing in binary mode
+        fstream file(filename, ios::in | ios::out | ios::binary);
+        // Save the root node record
+        Record root = getRecordAtIndex(file, 1);
+        // Delete the key from the record
+        deleteKeyFromIndex(file, key, root);
+        file.close();
+    }
+
+    // Remove certain key from the index & save the updates to the index back to the file
+    void deleteKeyFromIndex(fstream &file, int &recordID, Record &record)
+    {
+        // If the record is an internal node, check for its index pointers
+        if (record.isInternalNode)
+        {
+            // Loop over the keys of the record to find the next record index
+            short nextIndex = -1;
+            for (auto key : record.keys)
+            {
+                // If the current key is greater than or equal the record ID
+                // Then this is the next record index, save its index and break
+                if (key.first >= recordID)
+                {
+                    nextIndex = key.second;
+                    break;
+                }
+            }
+            // If the next index is not found, then the record ID is greater than the last key
+            // So, the next index is the last key index in the record
+            if (nextIndex == -1)
+                nextIndex = record.keys.rbegin()->second;
+            // Get the next record by its index
+            Record nextRecord = getRecordAtIndex(file, nextIndex, &record);
+            // Recursively call the function until reaching the leaf node
+            deleteKeyFromIndex(file, recordID, nextRecord);
+        }
+        // Otherwise, if the record is a leaf node
+        else
+        {
+            // Delete the key from the record
+            record.keys.erase(recordID);
+            // If the record has less than minimum number of keys, then we must borrow from the left or right node
+            if (record.keys.size() < fileNodes / 2 && record.previousRecord != NULL)
+            {
+                bool borrowedFromLeft = borrowFromLeftNode(file, record, recordID);
+                if (!borrowedFromLeft)
+                {
+                    bool borrowedFromRight = borrowFromRightNode(file, record, recordID);
+                    if (!borrowedFromRight)
+                    {
+                        bool mergedWithLeft = mergeWithLeftNode(file, record, recordID);
+                        if (!mergedWithLeft)
+                            mergeWithRightNode(file, record, recordID);
+                        return;
+                    }
+                }
+            }
+            // Otherwise, just update the index pointers of the previous records
+            else
+                propagateDeletion(file, record, recordID);
+            if (record.previousRecord == NULL)
+                markRecordAsDeleted(file, record);
+            propagateDeletion(file, record, recordID);
+            // Save the updates back to the index file
+            saveNodesFrom(file, record);
+        }
+    }
+
+    // Propagate the deletion of a key to the previous records to update their index pointers
+    void propagateDeletion(fstream &file, Record &record, int &recordID)
+    {
+        Record *unmodifiedRecord = record.previousRecord;
+        Record *previousRecord = &record;
+        while (unmodifiedRecord != NULL)
+        {
+            unmodifiedRecord->keys.erase(recordID);
+            unmodifiedRecord->keys.insert({previousRecord->keys.rbegin()->first, previousRecord->indexInFile});
+            previousRecord = unmodifiedRecord;
+            unmodifiedRecord = unmodifiedRecord->previousRecord;
+        }
+    }
+
+    // Borrow a key from the left node if it has more than minimum number of keys
+    bool borrowFromLeftNode(fstream &file, Record &record, int &recordID)
+    {
+        // check borrowing from the left child
+        pair<short, short> previousPair = {-1, -1};
+        for (auto key : record.previousRecord->keys)
+        {
+            if (key.first >= recordID)
+                break;
+            previousPair = key;
+        }
+
+        if (previousPair.first == -1)
+            return false;
+
+        Record leftChildRecord = getRecordAtIndex(file, previousPair.second, record.previousRecord);
+        int largestKeyFromLeftChild = leftChildRecord.keys.rbegin()->first;
+        if (leftChildRecord.keys.size() > fileNodes / 2)
+        {
+            pair<short, short> borrowedKey = *leftChildRecord.keys.rbegin();
+            leftChildRecord.keys.erase(borrowedKey.first);
+            record.keys.insert(borrowedKey);
+            propagateDeletion(file, leftChildRecord, largestKeyFromLeftChild);
+            saveNodesFrom(file, record);
+            saveNodesFrom(file, leftChildRecord);
+            return true;
+        }
+        return false;
+    }
+
+    // Borrow a key from the right node if it has more than minimum number of keys
+    bool borrowFromRightNode(fstream &file, Record &record, int &recordID)
+    {
+        pair<short, short> currentPair = {-1, -1};
+        bool found = false;
+        for (auto key : record.previousRecord->keys)
+        {
+            if (found)
+            {
+                currentPair = key;
+                break;
+            }
+            if (key.first >= recordID)
+                found = true;
+        }
+
+        if (currentPair.first == -1)
+            return false;
+
+        Record rightChildRecord = getRecordAtIndex(file, currentPair.second, record.previousRecord);
+        int largestKeyFromRecord = record.keys.rbegin()->first;
+        if (rightChildRecord.keys.size() > fileNodes / 2)
+        {
+            pair<short, short> borrowedKey = *rightChildRecord.keys.begin();
+            rightChildRecord.keys.erase(borrowedKey.first);
+            record.keys.insert(borrowedKey);
+            propagateDeletion(file, record, largestKeyFromRecord);
+            saveNodesFrom(file, record);
+            saveNodesFrom(file, rightChildRecord);
+            return true;
+        }
+        return false;
+    }
+
+    // Merge the record with the left node if it has less than minimum number of keys
+    bool mergeWithLeftNode(fstream &file, Record &record, int &recordID)
+    {
+        pair<short, short> previousPair = {-1, -1};
+        for (auto key : record.previousRecord->keys)
+        {
+            if (key.first >= recordID)
+                break;
+            previousPair = key;
+        }
+
+        if (previousPair.first == -1)
+            return false;
+
+        Record leftChildRecord = getRecordAtIndex(file, previousPair.second, record.previousRecord);
+        // if no child has enough keys to borrow from, then merge the record with one of its children
+        // merge with the left child
+        int oldGreatestKeyFromLeftChild = leftChildRecord.keys.rbegin()->first;
+        // merge the record with the left child
+        for (auto key : record.keys)
+            leftChildRecord.keys.insert(key);
+        propagateDeletion(file, leftChildRecord, oldGreatestKeyFromLeftChild);
+        propagateDeletion(file, record, recordID);
+        markRecordAsDeleted(file, record);
+        saveNodesFrom(file, leftChildRecord);
+        return true;
+    }
+
+    // Merge the record with the right node if it has less than minimum number of keys
+    bool mergeWithRightNode(fstream &file, Record &record, int &recordID)
+    {
+        pair<short, short> currentPair = {-1, -1};
+        bool found = false;
+        for (auto key : record.previousRecord->keys)
+        {
+            if (found)
+            {
+                currentPair = key;
+                break;
+            }
+            if (key.first >= recordID)
+                found = true;
+        }
+
+        if (currentPair.first == -1)
+            return false;
+
+        Record rightChildRecord = getRecordAtIndex(file, currentPair.second, record.previousRecord);
+        // if no child has enough keys to borrow from, then merge the record with one of its children
+        // merge with the right child
+        int oldGreatestKeyFromRecord = record.keys.rbegin()->first;
+        // merge the record with the right child
+        for (auto key : record.keys)
+            rightChildRecord.keys.insert(key);
+        propagateDeletion(file, rightChildRecord, oldGreatestKeyFromRecord);
+        // delete the record
+        markRecordAsDeleted(file, record);
+        // save the right child
+        saveNodesFrom(file, rightChildRecord);
+        return true;
+    }
+
+    // Update the index file to mark the record as deleted
+    void markRecordAsDeleted(fstream &file, Record &record)
+    {
+        // Clear the keys of the record
+        record.keys.clear();
+        // Chande the last empty record pointer to point to the index of the deleted record
+        short recordSize = 2 * fileNodes + 1;
+        short lastEmptyRecordIndex = getNextEmptyIndexFromFile(file);
+        if (lastEmptyRecordIndex == -1)
+        {
+            file.seekp(2, ios::beg);
+            file.write((char *)(&record.indexInFile), sizeof(short));
+        }
+        else
+        {
+            while (true)
+            {
+                file.seekp((lastEmptyRecordIndex * recordSize * sizeof(short)) + 2, ios::beg);
+                short nextEmptyIndex;
+                file.read((char *)(&nextEmptyIndex), sizeof(short));
+                if (nextEmptyIndex == -1)
+                {
+                    file.seekp((lastEmptyRecordIndex * recordSize * sizeof(short)) + 2, ios::beg);
+                    file.write((char *)(&record.indexInFile), sizeof(short));
+                    break;
+                }
+                lastEmptyRecordIndex = nextEmptyIndex;
+            }
+        }
+
+        // Delete the node record from the file
+        file.seekp(record.indexInFile * recordSize * sizeof(short), ios::beg);
+        short isInternalNode = -1;
+        file.write((char *)(&isInternalNode), sizeof(short));
+        for (int i = 0; i < fileNodes; i++)
+        {
+            short cell = -1;
+            file.write((char *)(&cell), sizeof(short));
+            file.write((char *)(&cell), sizeof(short));
+        }
+    }
+
+    // Get the next empty node index from the file
+    short getNextEmptyIndexFromFile(fstream &file)
+    {
+        file.seekg(2, ios::beg);
+        short nextEmptyIndex;
+        file.read((char *)(&nextEmptyIndex), sizeof(short));
+        return nextEmptyIndex;
+    }
+
+    // Save the nodes back to the file
+    void saveNodesFrom(fstream &file, Record &record)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        file.seekp(record.indexInFile * recordSize * sizeof(short), ios::beg);
+        short isInternalNode = record.isInternalNode ? 1 : 0;
+        file.write((char *)(&isInternalNode), sizeof(short));
+        int i = 0;
+        for (auto key : record.keys)
+        {
+            file.write((char *)(&key.first), sizeof(short));
+            file.write((char *)(&key.second), sizeof(short));
+            i++;
+        }
+        for (; i < fileNodes; i++)
+        {
+            short cell = -1;
+            file.write((char *)(&cell), sizeof(short));
+            file.write((char *)(&cell), sizeof(short));
+        }
+        if (record.previousRecord != NULL)
+            saveNodesFrom(file, *record.previousRecord);
+    }
+
+    // Get the record at a certain index from the file
+    Record getRecordAtIndex(fstream &file, short recordIndex, Record *previousRecord = NULL)
+    {
+        int recordSize = 2 * fileNodes + 1;
+        file.seekg(recordIndex * recordSize * sizeof(short), ios::beg);
+        Record record;
+        record.indexInFile = recordIndex;
+        short nodeType;
+        file.read((char *)(&nodeType), sizeof(short));
+        if (nodeType == 1)
+            record.isInternalNode = true;
+        else
+            record.isInternalNode = false;
+        pair<short, short> key;
+        for (int i = 0; i < fileNodes; i++)
+        {
+            file.read((char *)(&key.first), sizeof(short));
+            file.read((char *)(&key.second), sizeof(short));
+            if (key.first == -1 || key.second == -1)
+                break;
+            record.keys.insert(key);
+        }
+        record.previousRecord = previousRecord;
+        return record;
+    }
+};
+
 /* Mandatory functions definitions */
 // Create the index file with certain number of records
 void createIndexFile(char *filename, int numberOfRecords, int m)
@@ -487,6 +664,7 @@ void createIndexFile(char *filename, int numberOfRecords, int m)
         for (int j = 0; j < numberOfCells - 2; j++)
             file.write((char *)(&initialCell), sizeof(short));
     }
+    cout << "\tIndex File Created Successfully!\n";
     file.close();
 }
 
@@ -511,7 +689,8 @@ void deleteRecordFromIndex(char *filename, int recordID)
     // Create an object from the deletion class
     IndexDeletion deletion;
     // Call the delete function
-    deletion.deleteKeyFromIndex(filename, recordID);
+    deletion.deleteKey(filename, recordID);
+    cout << "\tKey Deleted Successfully!\n";
 }
 
 // Display the contents of the index file, each node in a line
@@ -585,69 +764,3 @@ int searchARecord(char *filename, int recordID)
             startOfRecord = false;
     }
 }
-
-void mergeTwoNodes(char *filename, int firstRecord, int secondRecord)
-{
-    short id, reference;
-    ifstream treeFile(filename, ios::in | ios::binary);
-    ofstream newFile("newfile.txt", ios::out | ios::binary);
-    while (treeFile.tellg() != firstRecord)
-    {
-        treeFile.read((char *)&id, sizeof(id));
-        newFile.write((char *)&id, sizeof(id));
-    }
-    treeFile.read((char *)&id, sizeof(id));
-    newFile.write((char *)&id, sizeof(id));
-    while (id != -1)
-    {
-        treeFile.read((char *)&id, sizeof(id));
-        treeFile.read((char *)&reference, sizeof(reference));
-        newFile.write((char *)&id, sizeof(id));
-        newFile.write((char *)&reference, sizeof(reference));
-    }
-    int currentPosition = treeFile.tellg();
-    treeFile.seekg(secondRecord, ios::beg);
-    id = 0;
-    // read the bit leaf or not
-    treeFile.read((char *)&reference, sizeof(reference));
-    while (id != -1)
-    {
-        treeFile.read((char *)&id, sizeof(id));
-        treeFile.read((char *)&reference, sizeof(reference));
-        currentPosition += (sizeof(id) + sizeof(reference));
-        newFile.write((char *)&id, sizeof(id));
-        newFile.write((char *)&reference, sizeof(reference));
-    }
-    treeFile.seekg(currentPosition, ios::beg);
-    while (!treeFile.eof())
-    {
-        treeFile.read((char *)&id, sizeof(id));
-        treeFile.read((char *)&reference, sizeof(reference));
-        newFile.write((char *)&id, sizeof(id));
-        newFile.write((char *)&reference, sizeof(reference));
-    }
-    treeFile.close();
-    newFile.close();
-    remove(filename);
-    rename("newfile.txt", filename);
-}
-
-/* int main()
-{
-    fstream test("bTreeIndex.bin", ios::out | ios::binary);
-    test.seekp(0, ios::beg);
-    short temp[] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-                    1, 10, 8, 32, 9, -1, -1, -1, -1, -1, -1,
-                    0, 1, 120, 2, 144, 3, 12, -1, -1, -1, -1,
-                    0, 11, 192, 12, 204, 14, 72, 15, 108, -1, -1,
-                    0, 5, 132, 6, 180, 7, 24, -1, -1, -1, -1,
-                    0, 8, 156, 9, 168, 10, 48, -1, -1, -1, -1,
-                    0, 17, 216, 18, 228, 19, 84, -1, -1, -1, -1,
-                    0, 24, 60, 30, 196, 32, 240, -1, -1, -1, -1,
-                    1, 3, 2, 7, 4, 10, 5, -1, -1, -1, -1,
-                    1, 15, 3, 19, 6, 32, 7, -1, -1, -1, -1};
-    for (short el : temp)
-        test.write((char *)&el, sizeof(short));
-    test.close();
-    return 0;
-} */
